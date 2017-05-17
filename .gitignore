@@ -47,6 +47,5 @@ Temporary Items
 .apdisk
 
 # Buid files
-Firmware/
 firmware/
-buid/
+build/
