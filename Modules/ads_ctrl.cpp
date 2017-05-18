@@ -20,6 +20,8 @@
 #include "ssid_config.h"
 //#include "debug_dumps.h"
 
+#include "TimeSync.cpp" //included so we can use timer rollover count
+
 //NOTE: VARIABLES
 //Queue size for interrupt->host communication, recommended at least 100; note, the actual size is 100*(sizeof(inADS))
 #define SAMPLE_QUEUE_SIZE 250
@@ -488,8 +490,10 @@ QueueHandle_t xDataReadyQueue; // Do not need to set NULL
 // Passed by queue
 struct inADSData
 {
-    TickType_t tickCount = 0;
-    byte inDataArray[30] = {0};
+    uint32_t timercount = 0;
+    uint16_t timerrollovercount = 0; 
+    byte inDataArray[28] = {0}; //TODO: make sure all calls / uses know that size has changed from 30 -> 28, we don't use first two bytes anymore.
+	//TODO: We could save an extra byte here; inDataArray only needs to be 27 (actually only 24 if discounting stat bytes)
 } s_tmpDataBuffer;
 typedef struct inADSData inADSData;
 
@@ -526,7 +530,7 @@ bool ADS::getData(byte dataInArray[29], TickType_t xTicksToWait)
     if(xDataReadyQueue == NULL) printf("Queue failed to create!\n");
 
     if (xQueueReceive(xDataReadyQueue, &s_tmpDataBuffer, xTicksToWait) == pdTRUE) { 
-        memcpy(dataInArray + 5, s_tmpDataBuffer.inDataArray + 5, 24);
+        memcpy(dataInArray + 3, s_tmpDataBuffer.inDataArray + 3, 24);
         return true;
     }
     else{
@@ -542,7 +546,7 @@ int ADS::getDataWaiting(byte dataInArray[29], TickType_t xTicksToWait)
     int inWaiting = uxQueueMessagesWaiting(xDataReadyQueue);
 
     if (xQueueReceive(xDataReadyQueue, &s_tmpDataBuffer, xTicksToWait) == pdTRUE) { 
-        memcpy(dataInArray + 5, s_tmpDataBuffer.inDataArray + 5, 24);
+        memcpy(dataInArray + 3, s_tmpDataBuffer.inDataArray + 3, 24);
         return inWaiting;
     }
     else{
@@ -559,10 +563,14 @@ bool ADS::getDataPacket(byte dataInArray[1400])
     }
 
     for (int i = 0; i < 57; i++) {
-        if (xQueueReceive(xDataReadyQueue, &s_tmpDataBuffer, 0) == pdTRUE) { 
+        if (xQueueReceive(xDataReadyQueue, &s_tmpDataBuffer, 0) == pdTRUE) {
+		if(i==0) {
+		uint64_t tmpTimeVal = ((uint64_t)s_tmpDataBuffer.timercount + ((uint64_t)s_tmpDataBuffer.timerrollovercount * ( (FRC2_CLK_FREQ/1000) * FRC2_ROLLOVER_PERIOD_MS))) / (uint64_t)(FRC2_CLK_FREQ / 1000000);
+		memcpy(dataInArray + 6, &tmpTimeVal,8); //This copies over uS timestamp
+		}
             // leave 24 spaces up from for status bytes, only copy data bytes
-            // Copy elements 5-28 (i.e. 24 elements) from inDataArray
-            memcpy(dataInArray + 24 + (i*24), s_tmpDataBuffer.inDataArray + 5, 24);
+            // Copy elements 3-26 (i.e. 24 elements) from inDataArray
+            memcpy(dataInArray + 24 + (i*24), s_tmpDataBuffer.inDataArray + 3, 24);
         }
         else {
             printf("xQueueReceive failed, file: %s, line: %d\n", __FILE__, __LINE__);
@@ -580,8 +588,8 @@ int ADS::getDataWaiting(byte dataInArray[29], TickType_t xTicksToWait, TickType_
     int inWaiting = uxQueueMessagesWaiting(xDataReadyQueue);
 
     if (xQueueReceive(xDataReadyQueue, &s_tmpDataBuffer, xTicksToWait) == pdTRUE) { 
-        memcpy(dataInArray + 5, s_tmpDataBuffer.inDataArray + 5, 24);
-        tickTimestamp = s_tmpDataBuffer.tickCount;
+        memcpy(dataInArray + 3, s_tmpDataBuffer.inDataArray + 3, 24);        
+//tickTimestamp = s_tmpDataBuffer.tickCount; //TODO FIX OR DELETE
         return inWaiting;
     }
     else{
@@ -616,13 +624,14 @@ void ADS::DRDYInterruptHandle(uint8_t gpio_num)
 {
     if(xDataReadyQueue != NULL)
     {
-        for(int i = 2; i < 29; ++i)
+        for(int i = 0; i < 27; ++i) // ...why the hell don't we use the first two bytes??? TODO: fixed this, make sure it didn't break anything else
         {
             interruptStruct.inDataArray[i] = spi_transfer_8(1,0x00);
         }
-        interruptStruct.tickCount = timer_get_count(FRC2);
-        //interruptStruct.tickCount = xTaskGetTickCountFromISR();
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        interruptStruct.timercount = uint32_t(timer_get_count(FRC2) - FRC2_LOAD_VALUE); //gives current nuymber of counts (not the actual timer valuer because FRC2 counts up)
+	//TODO Use TimeSync.cpp
+        interruptStruct.timerrollovercount = timerRolloverCount; //this is from TimeSync.cpp
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         xQueueSendFromISR(xDataReadyQueue, &interruptStruct, &xHigherPriorityTaskWoken);
     }
 }
