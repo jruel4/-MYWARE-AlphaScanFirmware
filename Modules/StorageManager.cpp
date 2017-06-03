@@ -205,11 +205,35 @@ class StorageManager {
         /*
         WiFi Caching API
         */
+        bool init_cache_conditional(void){
+            /*
+            Calls init cache only if cache files have not already been created.
+            */
+
+            // Check for a* cache file. Only checking for last expected file, we should do something more thorough than this.
+            char* fname = "f_1874";
+
+            spiffs_file fd = SPIFFS_open(&fs, fname, SPIFFS_RDONLY, 0);
+            if (fd < 0) {
+                // Assuming this means cache files have not been created
+                printf("Cache files not found. Proceeding to initialization.\n");
+                // NOTE: should be checcking errno here for specific value
+                int xerrno = SPIFFS_errno(&fs);
+                return init_cache();
+            }
+            else{
+                // Assuming this means cache files already initialized
+                printf("Cache files found, skipping initialization.\n");
+                int read_bytes = SPIFFS_read(&fs, fd, buf, mPktSize);
+                SPIFFS_close(&fs, fd);
+            }
+        }
+
         bool init_cache(void){
             /*
-            Create 60 seconds worth of sample cache files i.e. 60*250/8 = 1875 files with each file being 240 bytes (8 sample worth)
-            This will occupy 450,000 bytes + the space needed to store references.
-            */
+               Create 60 seconds worth of sample cache files i.e. 60*250/8 = 1875 files with each file being 240 bytes (8 sample worth)
+               This will occupy 450,000 bytes + the space needed to store references.
+             */
 
             char fname[6] = {0};
             char buf[mPktSize] = {0};
@@ -241,10 +265,10 @@ class StorageManager {
 
         bool write_cache(char[mPktSize] pkt){
             /* 
-            Cache pkt of 8 samples i.e. 240 byte buffer
-            */
+               Cache pkt of 8 samples i.e. 240 byte buffer
+             */
 
-            
+
             // Perform cache spreading logic
             if (muc < mNumCacheFiles){
                 // incrememnt endpointer
@@ -257,7 +281,7 @@ class StorageManager {
                     printf("Error opening file\n");
                     int xerrno = SPIFFS_errno(&fs);
                     printf("errno: %d\n",xerrno);
-                    return;
+                    return false;
                 }
                 int written = SPIFFS_write(&fs, fd, pkt, mPktSize);
                 SPIFFS_close(&fs, fd);
@@ -287,7 +311,7 @@ class StorageManager {
                     printf("Error opening file\n");
                     int xerrno = SPIFFS_errno(&fs);
                     printf("errno: %d\n",xerrno);
-                    return -1;
+                    return false;
                 }
                 int read_bytes = SPIFFS_read(&fs, fd, buf, mPktSize);
                 SPIFFS_close(&fs, fd);
