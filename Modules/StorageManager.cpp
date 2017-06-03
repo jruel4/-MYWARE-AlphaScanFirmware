@@ -78,14 +78,6 @@ class StorageManager {
             return read_file_spiffs(port_file,val,30); 
         }
 
-
-
-
-
-
-
-
-
         void example_read_file_spiffs()
         {
             const int buf_size = 0xFF;
@@ -210,9 +202,121 @@ class StorageManager {
             }
         }
 
+        /*
+        WiFi Caching API
+        */
+        bool init_cache(void){
+            /*
+            Create 60 seconds worth of sample cache files i.e. 60*250/8 = 1875 files with each file being 240 bytes (8 sample worth)
+            This will occupy 450,000 bytes + the space needed to store references.
+            */
+
+            char fname[6] = {0};
+            char buf[mPktSize] = {0};
+            spiffs_file fd;
+
+            for (int i = 0; i < mNumCacheFiles; i++){
+                // generate file name according to schema f_n : n = [0,num_files]
+
+                sprintf(fname, "f_%4d", i);
+                fd = SPIFFS_open(&fs, fname, SPIFFS_O_WRONLY | SPIFFS_O_CREAT, 0);
+
+                if (fd < 0) {
+                    printf("Error opening file: %s\n", fname);
+                    int xerrno = SPIFFS_errno(&fs);
+                    printf("errno: %d\n",xerrno);
+                    return;
+                }
+
+                int written = SPIFFS_write(&fs, fd, buf, mPktSize);
+
+                if (writing != 240){
+                    printf("Only wrote %d bytes on file %s\n", writing, fname);
+                    return;
+                }
+
+                SPIFFS_close(&fs, fd);
+            }
+        }
+
+        bool write_cache(char[mPktSize] pkt){
+            /* 
+            Cache pkt of 8 samples i.e. 240 byte buffer
+            */
+
+            
+            // Perform cache spreading logic
+            if (muc < mNumCacheFiles){
+                // incrememnt endpointer
+                mep = incrementCachePointer(mep);
+                // Write to pkt to file
+                char fname[6] = {0};
+                sprintf(fname, "f_%4d", mep);
+                spiffs_file fd = SPIFFS_open(&fs, fname, SPIFFS_O_WRONLY | SPIFFS_O_CREAT, 0);
+                if (fd < 0) {
+                    printf("Error opening file\n");
+                    int xerrno = SPIFFS_errno(&fs);
+                    printf("errno: %d\n",xerrno);
+                    return;
+                }
+                int written = SPIFFS_write(&fs, fd, pkt, mPktSize);
+                SPIFFS_close(&fs, fd);
+                // increment used count
+                muc++;
+                return true;
+            }
+            else{
+                // no more space to cache files
+                return false;
+            }
+        }
+
+        bool read_cache(char[mPktSize] buf){
+            /*
+               Read pkt from cache (if available)
+             */
+
+            // Perfrom cache logic
+            if (muc > 0){
+
+                // Read from begin pointer
+                char fname[6] = {0};
+                sprintf(fname, "f_%4d", mbp);
+                spiffs_file fd = SPIFFS_open(&fs, fname, SPIFFS_RDONLY, 0);
+                if (fd < 0) {
+                    printf("Error opening file\n");
+                    int xerrno = SPIFFS_errno(&fs);
+                    printf("errno: %d\n",xerrno);
+                    return -1;
+                }
+                int read_bytes = SPIFFS_read(&fs, fd, buf, mPktSize);
+                SPIFFS_close(&fs, fd);
+
+                // Increment begin point
+                mbp = incrementCachePointer(mbp);
+
+                // Decrement used count
+                muc--;
+
+            }
+            else{
+                // No cached data
+                return false;
+            }
+        }
+
     private:
 
+        // Class member variables
+        const int mNumCacheFiles = 1875;
+        const int mPktSize = 240;
+        int mbp = 0; // begin pointer
+        int mep = 0; // end pointer
+        int muc = 0; // used count
 
+        int incrementCachePointer(int val){
+            return (val + 1) % mNumCacheFiles;
+        }
 
         void _inititalize(void *pvParameters)
         {
