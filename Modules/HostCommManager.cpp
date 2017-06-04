@@ -496,6 +496,7 @@ class HostCommManager {
                 bool local_buf_acked = true;
                 int inWaiting = 0;
                 int heapSize = 0;
+                bool mCachingModeOn = false;
 
 
                 printf("Seting up ADS\n");
@@ -509,56 +510,127 @@ class HostCommManager {
 
                 while(1) {
 
-                    // If new data in local buf, send it
-                    if (!local_buf_acked) {
-                        int err = sendto(s, outbuf, pkt_size, 0, res.ai_addr, res.ai_addrlen );
-                        if (err < 0) {
+                    if (!mCachingModeOn){
+                        // If new data in local buf, send it
+                        if (!local_buf_acked) {
+                            int err = sendto(s, outbuf, pkt_size, 0, res.ai_addr, res.ai_addrlen );
+                            if (err < 0) {
+                                inWaiting = ads->getQueueSize();
+                                heapSize = xPortGetFreeHeapSize();
+                                printf("... socket send failed with err: %d, queue size: %d, heap: %d\n",err, inWaiting, heapSize);
+                                close(s);
+                                return;
+                            }
+                        }
+
+                        // If local buf is free, check queue for new packet's worth of data
+                        if (local_buf_acked){
                             inWaiting = ads->getQueueSize();
+                            if (inWaiting >= 57){
+                                // Fill local buffer with new data
+                                if (ads->getDataPacket(outbuf)){ 
+                                    local_buf_acked = false;
+                                }
+                                else{
+                                    printf("Failed to load outbuf, file: %s, line: %d\n",__FILE__,__LINE__);
+                                }
+                            }
+                        }
+
+                        // If local buf is not acked, periodically check to make sure that queue is not near overflow
+                        else {
+                            inWaiting = ads->getQueueSize();
+                            if  (inWaiting > 160){
+                                // Go into caching mode
+                                mCachingModeOn = true;
+                                continue;
+                            }
+                        }
+
+                        // Blocking read for ACK on currently buffered packet
+                        // TODO this should really have a timeout in case network is bad so we can keep caching...
+                        recvfrom(s, inbuf, inbuf_size, 0, res.ai_addr, &(res.ai_addrlen)); 
+                        if (inbuf[0] == outbuf[0])
+                        {
+                            // It's a proper ACK, move to next packet
+                            outbuf[0] = ++pkt_cnt;
+                            local_buf_acked = true;
+
+                            // Get status data
+                            outbuf[1] = (inWaiting >> 8) & 0xff;
+                            outbuf[2] = inWaiting & 0xff;
                             heapSize = xPortGetFreeHeapSize();
-                            printf("... socket send failed with err: %d, queue size: %d, heap: %d\n",err, inWaiting, heapSize);
-                            close(s);
+                            outbuf[3] = (heapSize >> 16) & 0xff;
+                            outbuf[4] = (heapSize >> 8)  & 0xff;
+                            outbuf[5] = (heapSize >> 0)  & 0xff;
+                        }
+                        else  {
+                            if (inbuf[2] == 0xff){
+                                ads->stopStreaming();
+                                close(s);
+                                printf("Received TERMINATE command\n");
+                                return;
+                            }
+                            drop_count++;
+                        }
+                    }
+                    else {
+
+                        //TODO Cache samples while more than 8 in queue
+                        //TODO write cacheSampes Method, this should return very quickly
+                        if (ads->cacheSamples() < 0){
+                            // Cache error or out of space - error out
+                            printf("Cache failed\n");
                             return;
                         }
-                    }
 
-                    // If local buf is free, check queue for new packet's worth of data
-                    if (local_buf_acked){
-                        inWaiting = ads->getQueueSize();
-                        if (inWaiting >= 57){
-                            // Fill local buffer with new data
-                            if (ads->getDataPacket(outbuf)){ 
-                                local_buf_acked = false;
-                            }
-                            else{
-                                printf("Failed to load outbuf, file: %s, line: %d\n",__FILE__,__LINE__);
+                        // Attempt send local buf
+                        if (!local_buf_acked) {
+                            int err = sendto(s, outbuf, pkt_size, 0, res.ai_addr, res.ai_addrlen );
+                            if (err < 0) {
+                                inWaiting = ads->getQueueSize();
+                                heapSize = xPortGetFreeHeapSize();
+                                printf("... socket send failed with err: %d, queue size: %d, heap: %d\n",err, inWaiting, heapSize);
+                                close(s);
+                                return;
                             }
                         }
-                    }
 
-                    // Blocking read for ACK on currently buffered packet
-                    recvfrom(s, inbuf, inbuf_size, 0, res.ai_addr, &(res.ai_addrlen)); 
-                    if (inbuf[0] == outbuf[0])
-                    {
-                        // It's a proper ACK, move to next packet
-                        outbuf[0] = ++pkt_cnt;
-                        local_buf_acked = true;
+                        // Blocking read for ACK on currently buffered packet
+                        // TODO this should really have a timeout in case network is bad so we can keep caching...
+                        recvfrom(s, inbuf, inbuf_size, 0, res.ai_addr, &(res.ai_addrlen)); 
+                        if (inbuf[0] == outbuf[0])
+                        {
+                            // It's a proper ACK, move to next packet
+                            outbuf[0] = ++pkt_cnt;
+                            local_buf_acked = true;
 
-                        // Get status data
-                        outbuf[1] = (inWaiting >> 8) & 0xff;
-                        outbuf[2] = inWaiting & 0xff;
-                        heapSize = xPortGetFreeHeapSize();
-                        outbuf[3] = (heapSize >> 16) & 0xff;
-                        outbuf[4] = (heapSize >> 8)  & 0xff;
-                        outbuf[5] = (heapSize >> 0)  & 0xff;
-                    }
-                    else  {
-                        if (inbuf[2] == 0xff){
-                            ads->stopStreaming();
-                            close(s);
-                            printf("Received TERMINATE command\n");
-                            return;
+                            // Get status data
+                            outbuf[1] = (inWaiting >> 8) & 0xff;
+                            outbuf[2] = inWaiting & 0xff;
+                            heapSize = xPortGetFreeHeapSize();
+                            outbuf[3] = (heapSize >> 16) & 0xff;
+                            outbuf[4] = (heapSize >> 8)  & 0xff;
+                            outbuf[5] = (heapSize >> 0)  & 0xff;
+
+                            //TODO If ack success then read_cache into local_buf
+                            // TODO actually write loadPacket method
+                            int num_loaded = storageManager->loadPacket(outbuf);
+                            if (num_loaded < 56){ 
+                                // No more cached files, go back into regular mode
+                                mCachingModeOn = false;
+                            }
+
                         }
-                        drop_count++;
+                        else  {
+                            if (inbuf[2] == 0xff){
+                                ads->stopStreaming();
+                                close(s);
+                                printf("Received TERMINATE command\n");
+                                return;
+                            }
+                            drop_count++;
+                        }
                     }
                 }
             }

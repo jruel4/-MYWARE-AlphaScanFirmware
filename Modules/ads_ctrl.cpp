@@ -820,6 +820,14 @@ void ADS::stopStreaming() {
 }
 
 
+void ADS::cacheSamples() {
+    /*
+    TODO
+    
+    Purpose: This method should cache all samples in queue until less than 8 remain.
+
+    */
+}
 
 
 
