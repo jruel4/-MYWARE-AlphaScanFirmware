@@ -15,6 +15,11 @@
 #include "esp8266.h"
 #include <stdlib.h>
 
+
+        const int mNumCacheFiles = 1875;
+        const int mPktSize = 240;
+
+
 class StorageManager {
 
     public:  
@@ -212,6 +217,7 @@ class StorageManager {
 
             // Check for a* cache file. Only checking for last expected file, we should do something more thorough than this.
             char* fname = "f_1874";
+            char buf[mPktSize] = {0};
 
             spiffs_file fd = SPIFFS_open(&fs, fname, SPIFFS_RDONLY, 0);
             if (fd < 0) {
@@ -240,7 +246,7 @@ class StorageManager {
             spiffs_file fd;
 
             for (int i = 0; i < mNumCacheFiles; i++){
-                // generate file name according to schema f_n : n = [0,num_files]
+                // generate file name according to schema f_n : n = [0,num_files-1]
 
                 sprintf(fname, "f_%4d", i);
                 fd = SPIFFS_open(&fs, fname, SPIFFS_O_WRONLY | SPIFFS_O_CREAT, 0);
@@ -249,21 +255,21 @@ class StorageManager {
                     printf("Error opening file: %s\n", fname);
                     int xerrno = SPIFFS_errno(&fs);
                     printf("errno: %d\n",xerrno);
-                    return;
+                    return xerrno;
                 }
 
                 int written = SPIFFS_write(&fs, fd, buf, mPktSize);
 
-                if (writing != 240){
-                    printf("Only wrote %d bytes on file %s\n", writing, fname);
-                    return;
+                if (written != 240){
+                    printf("Only wrote %d bytes on file %s\n", written, fname);
+                    return written;
                 }
 
                 SPIFFS_close(&fs, fd);
             }
         }
 
-        bool write_cache(char[mPktSize] pkt){
+        bool write_cache(char pkt[mPktSize]){
             /* 
                Cache pkt of 8 samples i.e. 240 byte buffer
              */
@@ -295,7 +301,7 @@ class StorageManager {
             }
         }
 
-        bool read_cache(char[mPktSize] buf){
+        bool read_cache(char buf[mPktSize]){
             /*
                Read pkt from cache (if available)
              */
@@ -321,7 +327,7 @@ class StorageManager {
 
                 // Decrement used count
                 muc--;
-
+		return true;
             }
             else{
                 // No cached data
@@ -332,8 +338,6 @@ class StorageManager {
     private:
 
         // Class member variables
-        const int mNumCacheFiles = 1875;
-        const int mPktSize = 240;
         int mbp = 0; // begin pointer
         int mep = 0; // end pointer
         int muc = 0; // used count

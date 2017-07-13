@@ -28,7 +28,8 @@ class OtaManager{
 
     public:
 
-        int run(){ 
+        int run(){
+	//TODO should this return a value? if not, then void 
             _initOTA();
         }
 

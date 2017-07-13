@@ -90,7 +90,7 @@ class AlphaScanManager : public esp_open_rtos::thread::task_t
                             else {
                                 // increment trials counter and enter soft ap mode
                                 vTaskDelay(1000/portTICK_PERIOD_MS);
-                                printf("Wifi status: %d\n");
+                                printf("Wifi status: %d\n", status);
                                 mWifiRetryCounter++;
                                 if (mWifiRetryCounter > 20){
                                     printf("Entering SoftAP Mode\n");
@@ -169,11 +169,11 @@ class AlphaScanManager : public esp_open_rtos::thread::task_t
                 // go into sync mode
 
                 timr.markT1();
-                printf("Micros1: %lu\n",(uint32_t)timr.getT1());
+                printf("Micros1: %u\n",(uint32_t)timr.getT1());
                 vTaskDelay(100/ portTICK_PERIOD_MS);
                 timr.markT2();	
-                printf("Micros2: %lu\n", (uint32_t)timr.getT2());
-                printf("Difference: %lu\n\n", (uint32_t)(timr.getT2() - timr.getT1()));	
+                printf("Micros2: %u\n", (uint32_t)timr.getT2());
+                printf("Difference: %u\n\n", (uint32_t)(timr.getT2() - timr.getT1()));	
 
 
                 printf("calling sync code now\n");
@@ -183,11 +183,11 @@ class AlphaScanManager : public esp_open_rtos::thread::task_t
                 printf("sync complete \n");
 
                 timr.markT1();
-                printf("Micros1: %lu\n",(uint32_t)timr.getT1());
+                printf("Micros1: %u\n",(uint32_t)timr.getT1());
                 vTaskDelay(100/ portTICK_PERIOD_MS);
                 timr.markT2();	
-                printf("Micros2: %lu\n", (uint32_t)timr.getT2());
-                printf("Difference: %lu\n\n", (uint32_t)(timr.getT2() - timr.getT1()));	
+                printf("Micros2: %u\n", (uint32_t)timr.getT2());
+                printf("Difference: %u\n\n", (uint32_t)(timr.getT2() - timr.getT1()));	
 
 
 

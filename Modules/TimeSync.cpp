@@ -131,7 +131,7 @@ uint64_t TimeSync::getT2() { return T2; }
 
 uint64_t TimeSync::getCurrentMicrosCount()
 {
-	if(DBG_TS) printf("%lu %lu %lu %lu %lu\n", (uint32_t)(getCyclesCount() - FRC2_LOAD_VALUE), (uint32_t)(timerRolloverCount * FRC2_CLK_FREQ), (uint32_t)FRC2_LOAD_VALUE,(uint32_t)FRC2_CLK_FREQ,(uint32_t)getCyclesCount());
+	if(DBG_TS) printf("%u %u %u %u %u\n", (uint32_t)(getCyclesCount() - FRC2_LOAD_VALUE), (uint32_t)(timerRolloverCount * FRC2_CLK_FREQ), (uint32_t)FRC2_LOAD_VALUE,(uint32_t)FRC2_CLK_FREQ,(uint32_t)getCyclesCount());
 	return ((getCyclesCount() - FRC2_LOAD_VALUE) + (timerRolloverCount * ( (FRC2_CLK_FREQ/1000) * FRC2_ROLLOVER_PERIOD_MS))) / (FRC2_CLK_FREQ / 1000000);
 	//current ticks plus all rollover ticks:	(getCyclesCount() - FRC2_LOAD_VALUE) + (timerRolloverCount * FRC2_CLK_FREQ) 
 	//divided by ticks per uS:			/ (FRC2_CKL_FREQ / 1000000.0);
