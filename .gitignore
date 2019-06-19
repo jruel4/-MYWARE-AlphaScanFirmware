@@ -49,3 +49,6 @@ Temporary Items
 # Buid files
 firmware/
 build/
+
+*.swp
+*~
